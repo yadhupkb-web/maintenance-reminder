@@ -1,0 +1,16 @@
+{
+  "tasks": [
+    {
+      "id": "1781684531041",
+      "name": "15 days tasks super OE",
+      "phone": "+919500692777",
+      "intervalValue": 15,
+      "intervalType": "days",
+      "time": "09:00",
+      "startDate": "2026-06-05",
+      "status": "scheduled",
+      "createdAt": "2026-06-17T08:22:11.041Z",
+      "nextReminder": "2026-06-20T03:30:00.000Z"
+    }
+  ]
+}

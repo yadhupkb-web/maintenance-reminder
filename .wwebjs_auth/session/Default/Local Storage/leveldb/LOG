@@ -1,0 +1,6 @@
+2026/06/15-17:23:39.877 15b0 Reusing MANIFEST C:\Users\yadhu\OneDrive\Documents\Maintenance\.wwebjs_auth\session\Default\Local Storage\leveldb/MANIFEST-000001
+2026/06/15-17:23:39.881 15b0 Recovering log #3
+2026/06/15-17:23:39.883 15b0 Reusing old log C:\Users\yadhu\OneDrive\Documents\Maintenance\.wwebjs_auth\session\Default\Local Storage\leveldb/000003.log 
+2026/06/15-18:04:09.136 f48 Level-0 table #5: started
+2026/06/15-18:04:09.144 f48 Level-0 table #5: 21192 bytes OK
+2026/06/15-18:04:09.149 f48 Delete type=0 #3
