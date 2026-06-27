@@ -30,6 +30,31 @@ function AddTaskForm({ onAdd }) {
     setForm({ name: '', phone: '', intervalValue: '', intervalType: 'days', time: '09:00', startDate: '' });
   };
 
+  const handleTest = async (e) => {
+    e.preventDefault();
+    if (!form.phone.trim()) {
+      alert("Please enter a phone number or group name first.");
+      return;
+    }
+    
+    const API_URL = import.meta.env.DEV ? 'http://localhost:3001' : '';
+    try {
+      const res = await fetch(`${API_URL}/api/test-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: form.phone.trim() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Test message sent successfully!");
+      } else {
+        alert("Error: " + data.error);
+      }
+    } catch (err) {
+      alert("Failed to send test message: " + err.message);
+    }
+  };
+
   // Get today's date in YYYY-MM-DD for the min attribute
   const today = new Date().toISOString().split('T')[0];
 
@@ -114,7 +139,10 @@ function AddTaskForm({ onAdd }) {
         </div>
       )}
 
-      <button type="submit" className="btn-add">Add reminder</button>
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <button type="submit" className="btn-add">Add reminder</button>
+        <button type="button" className="btn-add" style={{ backgroundColor: '#6c757d' }} onClick={handleTest}>Send Test Message</button>
+      </div>
     </form>
   );
 }
