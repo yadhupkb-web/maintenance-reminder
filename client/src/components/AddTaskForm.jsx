@@ -74,12 +74,12 @@ function AddTaskForm({ onAdd }) {
       </div>
 
       <div className="field">
-        <label htmlFor="task-phone">Phone number or Group name</label>
+        <label htmlFor="task-phone">Phone number or Group Invite Link</label>
         <input
           id="task-phone"
           type="text"
           name="phone"
-          placeholder="+911234567890 or My Group"
+          placeholder="+91... or https://chat.whatsapp.com/..."
           value={form.phone}
           onChange={handleChange}
           required

@@ -189,15 +189,22 @@ client.initialize();
 // ─── Dynamic Scheduling Logic ───────────────────────────────────────────────
 
 async function getValidChatId(phoneOrGroup) {
-  // Check if input contains letters (treat as group name)
-  if (/[a-zA-Z]/.test(phoneOrGroup)) {
-    const chats = await client.getChats();
-    const group = chats.find(c => c.isGroup && c.name.toLowerCase() === phoneOrGroup.toLowerCase());
-    if (!group) {
-      throw new Error(`Could not find a group named "${phoneOrGroup}". Ensure the bot is added to the group.`);
+  // Check if it's a group invite link
+  if (phoneOrGroup.includes('chat.whatsapp.com/')) {
+    try {
+      const inviteCode = phoneOrGroup.split('chat.whatsapp.com/')[1].replace('/', '').trim();
+      const groupId = await client.acceptInvite(inviteCode);
+      return groupId;
+    } catch (err) {
+      throw new Error(`Invalid group link or bot does not have permission: ${err.message}`);
     }
-    return group.id._serialized;
-  } else {
+  } 
+  // If they still try to use a name with letters, give them a helpful error
+  else if (/[a-zA-Z]/.test(phoneOrGroup)) {
+    throw new Error(`Please paste the WhatsApp Group Invite Link instead of the group name to prevent server crashes.`);
+  } 
+  // Otherwise it's a normal phone number
+  else {
     const cleaned = phoneOrGroup.replace(/\D/g, '');
     const numberId = await client.getNumberId(cleaned);
     if (!numberId) {
