@@ -113,39 +113,73 @@ client.on('disconnected', (reason) => {
 
 // ─── Incoming Message Handling ──────────────────────────────────────────────
 
+const awaitingSelection = {}; // { chatId: [taskId1, taskId2] }
+
 client.on('message', async (msg) => {
   const text = msg.body.trim().toLowerCase();
-  const match = text.match(/^done\s+(\d+)$/);
-  
-  if (match) {
-    const val = parseInt(match[1], 10);
-    const msgPhone = msg.from.replace(/\D/g, ''); // Extract digits from sender ID
-    
-    let found = false;
-    let units = 'days';
+  const chatId = msg.from; // This is the group ID or individual ID
 
+  // Check if they replied with just "done"
+  if (text === 'done') {
+    const pendingTasks = [];
+    
     for (let task of config.tasks) {
-      if (task.status === 'pending_reply' && task.intervalValue === val) {
-        const taskPhone = task.phone.replace(/\D/g, '');
-        // Match the phone numbers (WhatsApp IDs can sometimes differ slightly with country codes)
-        if (msgPhone === taskPhone || msgPhone.endsWith(taskPhone) || taskPhone.endsWith(msgPhone)) {
-          task.status = 'scheduled';
-          task.nextReminder = calculateNextReminder(task);
-          delete task.overdueSince;
-          delete task.lastReminderSentAt;
-          found = true;
-          units = task.intervalType;
-        }
+      let tChatId = task.chatId;
+      if (!tChatId) {
+        try {
+          tChatId = await getValidChatId(task.phone);
+          task.chatId = tChatId;
+          saveConfig(config);
+        } catch(e) {}
+      }
+      
+      if (task.status === 'pending_reply' && tChatId === chatId) {
+        pendingTasks.push(task);
       }
     }
-    
-    if (found) {
-      saveConfig(config);
-      addLog('success', `Task for interval ${val} completed by user.`);
-      await client.sendMessage(msg.from, `✅ Task completed! Next reminder scheduled for ${val} ${units} from now.`);
-    } else {
-      await client.sendMessage(msg.from, `❌ No pending task found with an interval of ${val}.`);
+
+    if (pendingTasks.length === 0) {
+      await client.sendMessage(chatId, `❌ There are no pending reminders to complete here.`);
+      return;
     }
+
+    awaitingSelection[chatId] = pendingTasks.map(t => t.id);
+
+    let reply = `📋 *Pending Tasks*\n\nPlease reply with the number corresponding to the task you want to complete:\n\n`;
+    pendingTasks.forEach((task, index) => {
+      reply += `${index + 1}. ${task.name} (every ${task.intervalValue} ${task.intervalType})\n`;
+    });
+
+    await client.sendMessage(chatId, reply);
+    return;
+  }
+
+  // Check if they replied with a number and we are awaiting a selection
+  const numMatch = text.match(/^(\d+)$/);
+  if (numMatch && awaitingSelection[chatId]) {
+    const index = parseInt(numMatch[1], 10) - 1;
+    const taskIds = awaitingSelection[chatId];
+    
+    if (index >= 0 && index < taskIds.length) {
+      const completedTaskId = taskIds[index];
+      const task = config.tasks.find(t => t.id === completedTaskId);
+      
+      if (task && task.status === 'pending_reply') {
+        task.status = 'scheduled';
+        task.nextReminder = calculateNextReminder(task);
+        delete task.overdueSince;
+        delete task.lastReminderSentAt;
+        
+        delete awaitingSelection[chatId];
+        saveConfig(config);
+        
+        addLog('success', `Task "${task.name}" completed by user.`);
+        await client.sendMessage(chatId, `✅ Task *"${task.name}"* completed! Next reminder scheduled for ${task.intervalValue} ${task.intervalType} from now.`);
+      }
+    } else {
+      await client.sendMessage(chatId, `❌ Invalid number. Please reply with a number between 1 and ${taskIds.length}.`);
+    }
+    return;
   }
 });
 
@@ -154,13 +188,23 @@ client.initialize();
 
 // ─── Dynamic Scheduling Logic ───────────────────────────────────────────────
 
-async function getValidChatId(phone) {
-  const cleaned = phone.replace(/\D/g, '');
-  const numberId = await client.getNumberId(cleaned);
-  if (!numberId) {
-    throw new Error(`${phone} is not registered on WhatsApp.`);
+async function getValidChatId(phoneOrGroup) {
+  // Check if input contains letters (treat as group name)
+  if (/[a-zA-Z]/.test(phoneOrGroup)) {
+    const chats = await client.getChats();
+    const group = chats.find(c => c.isGroup && c.name.toLowerCase() === phoneOrGroup.toLowerCase());
+    if (!group) {
+      throw new Error(`Could not find a group named "${phoneOrGroup}". Ensure the bot is added to the group.`);
+    }
+    return group.id._serialized;
+  } else {
+    const cleaned = phoneOrGroup.replace(/\D/g, '');
+    const numberId = await client.getNumberId(cleaned);
+    if (!numberId) {
+      throw new Error(`${phoneOrGroup} is not registered on WhatsApp.`);
+    }
+    return numberId._serialized;
   }
-  return numberId._serialized;
 }
 
 function calculateInitialReminder(task) {
@@ -224,10 +268,14 @@ setInterval(async () => {
         task.lastReminderSentAt = now.toISOString();
         stateChanged = true;
 
-        const message = `🔔 *Task Reminder*\n\n*${task.name}*\n\nPlease reply with "done ${task.intervalValue}" when you finish this task.`;
+        const message = `🔔 *Task Reminder*\n\n*${task.name}*\n\nPlease reply with "done" when you finish this task to see your options.`;
         
         try {
-          const chatId = await getValidChatId(task.phone);
+          let chatId = task.chatId;
+          if (!chatId) {
+             chatId = await getValidChatId(task.phone);
+             task.chatId = chatId;
+          }
           await client.sendMessage(chatId, message);
           addLog('success', `Sent reminder "${task.name}" → ${task.phone}`);
         } catch (err) {
@@ -252,10 +300,14 @@ setInterval(async () => {
         stateChanged = true;
 
         const overdueText = calculateOverdueText(task.overdueSince, task.intervalType);
-        const message = `⚠️ *Overdue Task Reminder*\n\n*${task.name}* is overdue by ${overdueText}!\n\nPlease reply with "done ${task.intervalValue}" when you finish it.`;
+        const message = `⚠️ *Overdue Task Reminder*\n\n*${task.name}* is overdue by ${overdueText}!\n\nPlease reply with "done" when you finish it to see your options.`;
 
         try {
-          const chatId = await getValidChatId(task.phone);
+          let chatId = task.chatId;
+          if (!chatId) {
+             chatId = await getValidChatId(task.phone);
+             task.chatId = chatId;
+          }
           await client.sendMessage(chatId, message);
           addLog('warning', `Sent overdue reminder "${task.name}" → ${task.phone}`);
         } catch (err) {
@@ -279,17 +331,27 @@ app.get('/api/tasks', (req, res) => {
   res.json({ tasks: config.tasks });
 });
 
-app.post('/api/tasks', (req, res) => {
+app.post('/api/tasks', async (req, res) => {
   const { name, phone, intervalValue, intervalType, time, startDate } = req.body;
 
   if (!name || !phone || !intervalValue) {
     return res.status(400).json({ error: 'Missing required fields.' });
   }
 
+  let resolvedChatId;
+  if (clientStatus === 'ready') {
+    try {
+      resolvedChatId = await getValidChatId(phone);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  }
+
   const task = {
     id: Date.now().toString(),
     name: name.trim(),
     phone: phone.trim(),
+    chatId: resolvedChatId || null,
     intervalValue: parseInt(intervalValue, 10),
     intervalType: intervalType || 'days',
     time: time || '09:00',

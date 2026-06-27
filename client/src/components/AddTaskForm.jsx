@@ -49,12 +49,12 @@ function AddTaskForm({ onAdd }) {
       </div>
 
       <div className="field">
-        <label htmlFor="task-phone">Phone number</label>
+        <label htmlFor="task-phone">Phone number or Group name</label>
         <input
           id="task-phone"
           type="text"
           name="phone"
-          placeholder="+911234567890"
+          placeholder="+911234567890 or My Group"
           value={form.phone}
           onChange={handleChange}
           required
