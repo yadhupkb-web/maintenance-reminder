@@ -62,8 +62,10 @@ let clientStatus = 'disconnected';
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: path.join(__dirname, '.wwebjs_auth') }),
+  authTimeoutMs: 120000,
   puppeteer: {
     headless: true,
+    protocolTimeout: 300000, // 5 minutes (fixes Runtime.callFunctionOn timeouts)
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
