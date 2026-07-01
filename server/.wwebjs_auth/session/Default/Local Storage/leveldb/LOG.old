@@ -1,6 +1,0 @@
-2026/06/17-18:19:36.584 72f8 Reusing MANIFEST C:\Users\yadhu\OneDrive\Documents\Maintenance\server\.wwebjs_auth\session\Default\Local Storage\leveldb/MANIFEST-000001
-2026/06/17-18:19:36.589 72f8 Recovering log #7
-2026/06/17-18:19:36.591 72f8 Reusing old log C:\Users\yadhu\OneDrive\Documents\Maintenance\server\.wwebjs_auth\session\Default\Local Storage\leveldb/000007.log 
-2026/06/17-18:20:36.601 6fa8 Level-0 table #11: started
-2026/06/17-18:20:36.608 6fa8 Level-0 table #11: 14565 bytes OK
-2026/06/17-18:20:36.615 6fa8 Delete type=0 #7

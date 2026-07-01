@@ -1,0 +1,8 @@
+node_modules/
+.wwebjs_auth/
+.wwebjs_cache/
+server/.wwebjs_auth/
+server/.wwebjs_cache/
+config.json
+server/config.json
+client/node_modules/
