@@ -182,6 +182,7 @@ client.on('message', async (msg) => {
         task.nextReminder = calculateNextReminder(task);
         delete task.overdueSince;
         delete task.lastReminderSentAt;
+        delete task.lastWarningSentAt;
         
         delete awaitingSelection[chatId];
         saveConfig(config);
@@ -282,6 +283,32 @@ setInterval(async () => {
     // 1. Initial Reminder
     if (task.status === 'scheduled') {
       const nextReminder = new Date(task.nextReminder);
+      
+      // Advance Warnings for advanced tasks
+      if (task.taskType === 'advanced' && task.advanceWarningDays > 0) {
+        const warningStart = new Date(nextReminder.getTime() - (task.advanceWarningDays * 86400000));
+        if (now >= warningStart && now < nextReminder) {
+          const lastWarning = task.lastWarningSentAt ? new Date(task.lastWarningSentAt) : new Date(0);
+          if (now.getTime() - lastWarning.getTime() >= 86400000) { // 1 day limit
+            task.lastWarningSentAt = now.toISOString();
+            stateChanged = true;
+            
+            const daysLeft = Math.ceil((nextReminder.getTime() - now.getTime()) / 86400000);
+            const message = `⏳ *Advance Warning*\n\nYour task *${task.name}* is due in ${daysLeft} day(s)!`;
+            
+            try {
+              let chatId = task.chatId;
+              if (!chatId) {
+                 chatId = await getValidChatId(task.phone);
+                 task.chatId = chatId;
+              }
+              client.sendMessage(chatId, message);
+              addLog('success', `Sent advance warning for "${task.name}"`);
+            } catch (err) {}
+          }
+        }
+      }
+
       if (now >= nextReminder) {
         task.status = 'pending_reply';
         task.overdueSince = now.toISOString();
@@ -309,10 +336,15 @@ setInterval(async () => {
       const timeSinceLast = now.getTime() - lastSent.getTime();
       
       let isTimeForOverdue = false;
-      if (task.intervalType === 'minutes') {
-        isTimeForOverdue = timeSinceLast >= 60000; // 1 minute
+      if (task.taskType === 'advanced') {
+        const nagMs = task.nagIntervalValue * (task.nagIntervalType === 'days' ? 86400000 : 3600000);
+        isTimeForOverdue = timeSinceLast >= nagMs;
       } else {
-        isTimeForOverdue = timeSinceLast >= 86400000; // 1 day
+        if (task.intervalType === 'minutes') {
+          isTimeForOverdue = timeSinceLast >= 60000; // 1 minute
+        } else {
+          isTimeForOverdue = timeSinceLast >= 86400000; // 1 day
+        }
       }
 
       if (isTimeForOverdue) {
@@ -352,7 +384,10 @@ app.get('/api/tasks', (req, res) => {
 });
 
 app.post('/api/tasks', async (req, res) => {
-  const { name, phone, intervalValue, intervalType, time, startDate } = req.body;
+  const { 
+    name, phone, intervalValue, intervalType, time, startDate,
+    taskType, advanceWarningDays, nagIntervalValue, nagIntervalType
+  } = req.body;
 
   if (!name || !phone || !intervalValue) {
     return res.status(400).json({ error: 'Missing required fields.' });
@@ -369,6 +404,7 @@ app.post('/api/tasks', async (req, res) => {
 
   const task = {
     id: Date.now().toString(),
+    taskType: taskType || 'reminder',
     name: name.trim(),
     phone: phone.trim(),
     chatId: resolvedChatId || null,
@@ -377,6 +413,9 @@ app.post('/api/tasks', async (req, res) => {
     time: time || '09:00',
     startDate: startDate || null,
     status: 'scheduled',
+    advanceWarningDays: advanceWarningDays || 0,
+    nagIntervalValue: nagIntervalValue || 1,
+    nagIntervalType: nagIntervalType || 'days',
     createdAt: new Date().toISOString(),
   };
 

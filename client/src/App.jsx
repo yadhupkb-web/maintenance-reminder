@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import AddTaskForm from './components/AddTaskForm';
+import AddAdvancedTaskForm from './components/AddAdvancedTaskForm';
 import TaskList from './components/TaskList';
 import StatusBar from './components/StatusBar';
 import './App.css';
@@ -13,6 +14,7 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [logs, setLogs] = useState([]);
   const [toast, setToast] = useState(null);
+  const [activeTab, setActiveTab] = useState('reminders');
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type });
@@ -88,11 +90,29 @@ function App() {
     qr: 'waiting',
   };
 
+  const activeTasks = tasks.filter(t => 
+    activeTab === 'reminders' ? t.taskType !== 'advanced' : t.taskType === 'advanced'
+  );
+
   return (
     <div className="app">
       <header className="header">
-        <h1>Reminders</h1>
+        <h1>{activeTab === 'reminders' ? 'Reminders' : 'Advanced Tasks'}</h1>
         <p>WhatsApp task reminders on autopilot</p>
+        <div className="tabs">
+          <button 
+            className={`tab ${activeTab === 'reminders' ? 'active' : ''}`}
+            onClick={() => setActiveTab('reminders')}
+          >
+            Standard Reminders
+          </button>
+          <button 
+            className={`tab ${activeTab === 'advanced' ? 'active' : ''}`}
+            onClick={() => setActiveTab('advanced')}
+          >
+            Daily / Advanced
+          </button>
+        </div>
       </header>
 
       <div className="connection">
@@ -101,13 +121,17 @@ function App() {
       </div>
 
       <div className="section">
-        <div className="section-title">New reminder</div>
-        <AddTaskForm onAdd={handleAddTask} />
+        <div className="section-title">New {activeTab === 'reminders' ? 'Reminder' : 'Advanced Task'}</div>
+        {activeTab === 'reminders' ? (
+          <AddTaskForm onAdd={handleAddTask} />
+        ) : (
+          <AddAdvancedTaskForm onAdd={handleAddTask} />
+        )}
       </div>
 
       <div className="section">
-        <div className="section-title">Active reminders ({tasks.length})</div>
-        <TaskList tasks={tasks} onDelete={handleDeleteTask} />
+        <div className="section-title">Active {activeTab === 'reminders' ? 'Reminders' : 'Tasks'} ({activeTasks.length})</div>
+        <TaskList tasks={activeTasks} onDelete={handleDeleteTask} />
       </div>
 
       <div className="section">

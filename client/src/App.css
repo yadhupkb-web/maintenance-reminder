@@ -1,1 +1,32 @@
 /* App.css is intentionally empty — all styles are in index.css */
+
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  background-color: var(--card-bg);
+  padding: 5px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.tab {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.tab:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tab.active {
+  background-color: var(--primary);
+  color: white;
+}
