@@ -2,12 +2,13 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth } = pkg;
 import qrcode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import pino from 'pino';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,175 +57,153 @@ function addLog(type, message) {
   io.emit('log', entry);
 }
 
-// ─── WhatsApp Client ────────────────────────────────────────────────────────
+// ─── WhatsApp Client (Baileys) ──────────────────────────────────────────────
 
 let clientStatus = 'disconnected';
+let sock;
 
-const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: path.join(__dirname, '.wwebjs_auth') }),
-  authTimeoutMs: 120000,
-  puppeteer: {
-    headless: true,
-    protocolTimeout: 300000, // 5 minutes (fixes Runtime.callFunctionOn timeouts)
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--disable-extensions',
-      '--mute-audio',
-      '--disable-background-networking',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-breakpad',
-      '--disable-component-extensions-with-background-pages',
-      '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-      '--disable-ipc-flooding-protection',
-      '--disable-renderer-backgrounding',
-      '--enable-features=NetworkService,NetworkServiceInProcess',
-      '--metrics-recording-only'
-    ],
-  },
-});
+async function connectToWhatsApp() {
+  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'baileys_auth'));
+  
+  sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: false,
+    logger: pino({ level: 'silent' }), // Suppress heavy logging
+  });
 
-client.on('qr', (qr) => {
-  clientStatus = 'qr';
-  io.emit('status', clientStatus);
-  console.log('\n─────────────────────────────────────────');
-  console.log('  Scan this QR code with WhatsApp:');
-  console.log('  (Linked Devices → Link a Device)');
-  console.log('─────────────────────────────────────────\n');
-  qrcode.generate(qr, { small: true });
-});
+  sock.ev.on('creds.update', saveCreds);
 
-client.on('ready', () => {
-  console.log('WhatsApp connected.\n');
-  clientStatus = 'ready';
-  io.emit('status', clientStatus);
-  addLog('success', 'WhatsApp connected.');
-});
-
-client.on('authenticated', () => {
-  console.log('Session authenticated.');
-  addLog('info', 'Session authenticated.');
-});
-
-client.on('auth_failure', (msg) => {
-  clientStatus = 'disconnected';
-  io.emit('status', clientStatus);
-  addLog('error', `Auth failed: ${msg}`);
-});
-
-client.on('disconnected', (reason) => {
-  clientStatus = 'disconnected';
-  io.emit('status', clientStatus);
-  addLog('error', `Disconnected: ${reason}`);
-});
-
-// ─── Incoming Message Handling ──────────────────────────────────────────────
-
-const awaitingSelection = {}; // { chatId: [taskId1, taskId2] }
-
-client.on('message', async (msg) => {
-  const text = msg.body.trim().toLowerCase();
-  const chatId = msg.from; // This is the group ID or individual ID
-
-  // Check if they replied with just "done"
-  if (text === 'done') {
-    const pendingTasks = [];
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update;
     
-    for (let task of config.tasks) {
-      let tChatId = task.chatId;
-      if (!tChatId) {
-        try {
-          tChatId = await getValidChatId(task.phone);
-          task.chatId = tChatId;
-          saveConfig(config);
-        } catch(e) {}
-      }
-      
-      if (task.status === 'pending_reply' && tChatId === chatId) {
-        pendingTasks.push(task);
-      }
+    if (qr) {
+      clientStatus = 'qr';
+      io.emit('status', clientStatus);
+      console.log('\n─────────────────────────────────────────');
+      console.log('  Scan this QR code with WhatsApp:');
+      console.log('  (Linked Devices → Link a Device)');
+      console.log('─────────────────────────────────────────\n');
+      qrcode.generate(qr, { small: true });
     }
 
-    if (pendingTasks.length === 0) {
-      await client.sendMessage(chatId, `❌ There are no pending reminders to complete here.`);
+    if (connection === 'close') {
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      clientStatus = 'disconnected';
+      io.emit('status', clientStatus);
+      addLog('error', 'Disconnected from WhatsApp.');
+      
+      if (shouldReconnect) {
+        connectToWhatsApp();
+      } else {
+        addLog('error', 'Logged out. Please delete the server/baileys_auth folder and restart.');
+      }
+    } else if (connection === 'open') {
+      console.log('WhatsApp connected.\n');
+      clientStatus = 'ready';
+      io.emit('status', clientStatus);
+      addLog('success', 'WhatsApp connected.');
+    }
+  });
+
+  const awaitingSelection = {}; // { chatId: [taskId1, taskId2] }
+
+  sock.ev.on('messages.upsert', async (m) => {
+    if (m.type !== 'notify') return;
+    const msg = m.messages[0];
+    if (!msg.message || msg.key.fromMe) return;
+
+    const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
+    const chatId = msg.key.remoteJid;
+
+    if (text === 'done') {
+      const pendingTasks = [];
+      
+      for (let task of config.tasks) {
+        let tChatId = task.chatId;
+        if (!tChatId) {
+          try {
+            tChatId = await getValidChatId(task.phone);
+            task.chatId = tChatId;
+            saveConfig(config);
+          } catch(e) {}
+        }
+        
+        if (task.status === 'pending_reply' && tChatId === chatId) {
+          pendingTasks.push(task);
+        }
+      }
+
+      if (pendingTasks.length === 0) {
+        await sock.sendMessage(chatId, { text: `❌ There are no pending reminders to complete here.` });
+        return;
+      }
+
+      awaitingSelection[chatId] = pendingTasks.map(t => t.id);
+
+      let reply = `📋 *Pending Tasks*\n\nPlease reply with the number corresponding to the task you want to complete:\n\n`;
+      pendingTasks.forEach((task, index) => {
+        reply += `${index + 1}. ${task.name} (every ${task.intervalValue} ${task.intervalType})\n`;
+      });
+
+      await sock.sendMessage(chatId, { text: reply });
       return;
     }
 
-    awaitingSelection[chatId] = pendingTasks.map(t => t.id);
-
-    let reply = `📋 *Pending Tasks*\n\nPlease reply with the number corresponding to the task you want to complete:\n\n`;
-    pendingTasks.forEach((task, index) => {
-      reply += `${index + 1}. ${task.name} (every ${task.intervalValue} ${task.intervalType})\n`;
-    });
-
-    await client.sendMessage(chatId, reply);
-    return;
-  }
-
-  // Check if they replied with a number and we are awaiting a selection
-  const numMatch = text.match(/^(\d+)$/);
-  if (numMatch && awaitingSelection[chatId]) {
-    const index = parseInt(numMatch[1], 10) - 1;
-    const taskIds = awaitingSelection[chatId];
-    
-    if (index >= 0 && index < taskIds.length) {
-      const completedTaskId = taskIds[index];
-      const task = config.tasks.find(t => t.id === completedTaskId);
+    const numMatch = text.match(/^(\d+)$/);
+    if (numMatch && awaitingSelection[chatId]) {
+      const index = parseInt(numMatch[1], 10) - 1;
+      const taskIds = awaitingSelection[chatId];
       
-      if (task && task.status === 'pending_reply') {
-        task.status = 'scheduled';
-        task.nextReminder = calculateNextReminder(task);
-        delete task.overdueSince;
-        delete task.lastReminderSentAt;
-        delete task.lastWarningSentAt;
+      if (index >= 0 && index < taskIds.length) {
+        const completedTaskId = taskIds[index];
+        const task = config.tasks.find(t => t.id === completedTaskId);
         
-        delete awaitingSelection[chatId];
-        saveConfig(config);
-        
-        addLog('success', `Task "${task.name}" completed by user.`);
-        await client.sendMessage(chatId, `✅ Task *"${task.name}"* completed! Next reminder scheduled for ${task.intervalValue} ${task.intervalType} from now.`);
+        if (task && task.status === 'pending_reply') {
+          task.status = 'scheduled';
+          task.nextReminder = calculateNextReminder(task);
+          delete task.overdueSince;
+          delete task.lastReminderSentAt;
+          delete task.lastWarningSentAt;
+          
+          delete awaitingSelection[chatId];
+          saveConfig(config);
+          
+          addLog('success', `Task "${task.name}" completed by user.`);
+          await sock.sendMessage(chatId, { text: `✅ Task *"${task.name}"* completed! Next reminder scheduled for ${task.intervalValue} ${task.intervalType} from now.` });
+        }
+      } else {
+        await sock.sendMessage(chatId, { text: `❌ Invalid number. Please reply with a number between 1 and ${taskIds.length}.` });
       }
-    } else {
-      await client.sendMessage(chatId, `❌ Invalid number. Please reply with a number between 1 and ${taskIds.length}.`);
+      return;
     }
-    return;
-  }
-});
+  });
+}
 
-console.log('Starting WhatsApp client...');
-client.initialize();
+console.log('Starting WhatsApp client (Baileys)...');
+connectToWhatsApp();
 
 // ─── Dynamic Scheduling Logic ───────────────────────────────────────────────
 
 async function getValidChatId(phoneOrGroup) {
-  // Check if it's a group invite link
   if (phoneOrGroup.includes('chat.whatsapp.com/')) {
     try {
       const inviteCode = phoneOrGroup.split('chat.whatsapp.com/')[1].replace('/', '').trim();
-      const groupId = await client.acceptInvite(inviteCode);
+      const groupId = await sock.groupAcceptInvite(inviteCode);
       return groupId;
     } catch (err) {
       throw new Error(`Invalid group link or bot does not have permission: ${err.message}`);
     }
   } 
-  // If they still try to use a name with letters, give them a helpful error
   else if (/[a-zA-Z]/.test(phoneOrGroup)) {
     throw new Error(`Please paste the WhatsApp Group Invite Link instead of the group name to prevent server crashes.`);
   } 
-  // Otherwise it's a normal phone number
   else {
     const cleaned = phoneOrGroup.replace(/\D/g, '');
-    const numberId = await client.getNumberId(cleaned);
-    if (!numberId) {
+    const [result] = await sock.onWhatsApp(cleaned);
+    if (!result || !result.exists) {
       throw new Error(`${phoneOrGroup} is not registered on WhatsApp.`);
     }
-    return numberId._serialized;
+    return result.jid;
   }
 }
 
@@ -239,7 +218,6 @@ function calculateInitialReminder(task) {
     if (reminderDate <= now && !task.startDate) {
        reminderDate.setDate(reminderDate.getDate() + 1);
     } else if (reminderDate <= now && task.startDate) {
-       // Keep adding the interval until the date is in the future
        while (reminderDate <= now) {
          reminderDate.setDate(reminderDate.getDate() + task.intervalValue);
        }
@@ -274,13 +252,12 @@ function calculateOverdueText(overdueSinceISO, intervalType) {
 }
 
 setInterval(async () => {
-  if (clientStatus !== 'ready') return;
+  if (clientStatus !== 'ready' || !sock) return;
   const now = new Date();
 
   let stateChanged = false;
 
   for (let task of config.tasks) {
-    // 1. Initial Reminder
     if (task.status === 'scheduled') {
       const nextReminder = new Date(task.nextReminder);
       
@@ -289,7 +266,7 @@ setInterval(async () => {
         const warningStart = new Date(nextReminder.getTime() - (task.advanceWarningDays * 86400000));
         if (now >= warningStart && now < nextReminder) {
           const lastWarning = task.lastWarningSentAt ? new Date(task.lastWarningSentAt) : new Date(0);
-          if (now.getTime() - lastWarning.getTime() >= 86400000) { // 1 day limit
+          if (now.getTime() - lastWarning.getTime() >= 86400000) { 
             task.lastWarningSentAt = now.toISOString();
             stateChanged = true;
             
@@ -302,7 +279,7 @@ setInterval(async () => {
                  chatId = await getValidChatId(task.phone);
                  task.chatId = chatId;
               }
-              client.sendMessage(chatId, message);
+              await sock.sendMessage(chatId, { text: message });
               addLog('success', `Sent advance warning for "${task.name}"`);
             } catch (err) {}
           }
@@ -323,14 +300,13 @@ setInterval(async () => {
              chatId = await getValidChatId(task.phone);
              task.chatId = chatId;
           }
-          await client.sendMessage(chatId, message);
+          await sock.sendMessage(chatId, { text: message });
           addLog('success', `Sent reminder "${task.name}" → ${task.phone}`);
         } catch (err) {
           addLog('error', `Failed "${task.name}": ${err.message}`);
         }
       }
     } 
-    // 2. Overdue Reminders
     else if (task.status === 'pending_reply') {
       const lastSent = new Date(task.lastReminderSentAt);
       const timeSinceLast = now.getTime() - lastSent.getTime();
@@ -341,9 +317,9 @@ setInterval(async () => {
         isTimeForOverdue = timeSinceLast >= nagMs;
       } else {
         if (task.intervalType === 'minutes') {
-          isTimeForOverdue = timeSinceLast >= 60000; // 1 minute
+          isTimeForOverdue = timeSinceLast >= 60000;
         } else {
-          isTimeForOverdue = timeSinceLast >= 86400000; // 1 day
+          isTimeForOverdue = timeSinceLast >= 86400000;
         }
       }
 
@@ -360,7 +336,7 @@ setInterval(async () => {
              chatId = await getValidChatId(task.phone);
              task.chatId = chatId;
           }
-          await client.sendMessage(chatId, message);
+          await sock.sendMessage(chatId, { text: message });
           addLog('warning', `Sent overdue reminder "${task.name}" → ${task.phone}`);
         } catch (err) {
           addLog('error', `Failed overdue "${task.name}": ${err.message}`);
@@ -371,7 +347,7 @@ setInterval(async () => {
 
   if (stateChanged) saveConfig(config);
 
-}, 60000); // Check every minute
+}, 60000);
 
 // ─── REST API ───────────────────────────────────────────────────────────────
 
@@ -441,14 +417,14 @@ app.delete('/api/tasks/:id', (req, res) => {
 
 app.post('/api/test-message', async (req, res) => {
   const { phone, message } = req.body;
-  if (clientStatus !== 'ready') {
+  if (clientStatus !== 'ready' || !sock) {
     return res.status(503).json({ error: 'WhatsApp not connected. Scan QR in terminal first.' });
   }
   if (!phone) return res.status(400).json({ error: 'Phone number required.' });
 
   try {
     const chatId = await getValidChatId(phone);
-    await client.sendMessage(chatId, message || 'Test message from WhatsApp Reminder.');
+    await sock.sendMessage(chatId, { text: message || 'Test message from WhatsApp Reminder.' });
     addLog('success', `Test sent → ${phone}`);
     res.json({ success: true });
   } catch (err) {
@@ -489,6 +465,5 @@ httpServer.listen(PORT, '0.0.0.0', () => {
 
 process.on('SIGINT', async () => {
   console.log('\nShutting down...');
-  await client.destroy();
   process.exit(0);
 });

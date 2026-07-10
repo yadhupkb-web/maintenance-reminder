@@ -6,3 +6,5 @@ server/.wwebjs_cache/
 config.json
 server/config.json
 client/node_modules/
+baileys_auth/
+server/baileys_auth/
