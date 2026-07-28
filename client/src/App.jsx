@@ -4,6 +4,7 @@ import AddTaskForm from './components/AddTaskForm';
 import AddAdvancedTaskForm from './components/AddAdvancedTaskForm';
 import TaskList from './components/TaskList';
 import StatusBar from './components/StatusBar';
+import { QRCodeSVG } from 'qrcode.react';
 import './App.css';
 
 const API_URL = import.meta.env.DEV ? 'http://localhost:3001' : '';
@@ -11,6 +12,7 @@ const socket = io(API_URL || undefined);
 
 function App() {
   const [status, setStatus] = useState('disconnected');
+  const [qrData, setQrData] = useState('');
   const [tasks, setTasks] = useState([]);
   const [logs, setLogs] = useState([]);
   const [toast, setToast] = useState(null);
@@ -35,6 +37,7 @@ function App() {
 
   useEffect(() => {
     socket.on('status', (s) => setStatus(s));
+    socket.on('qr', (data) => setQrData(data));
     socket.on('log', (entry) => {
       setLogs((prev) => [...prev.slice(-99), entry]);
     });
@@ -44,6 +47,7 @@ function App() {
 
     return () => {
       socket.off('status');
+      socket.off('qr');
       socket.off('log');
       socket.off('tasks_updated');
     };
@@ -80,8 +84,8 @@ function App() {
 
   const statusLabel = {
     ready: 'Connected',
-    disconnected: 'Disconnected — scan QR in terminal',
-    qr: 'Waiting for QR scan in terminal…',
+    disconnected: 'Disconnected — check logs or restart',
+    qr: 'Waiting for QR scan…',
   };
 
   const dotClass = {
@@ -119,6 +123,16 @@ function App() {
         <span className={`connection-dot ${dotClass[status] || 'disconnected'}`} />
         {statusLabel[status] || 'Disconnected'}
       </div>
+
+      {status === 'qr' && qrData && (
+        <div style={{ marginBottom: '2rem', textAlign: 'center', background: 'var(--bg-card)', padding: '2rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+          <h2 style={{ fontSize: '1.1rem', marginBottom: '1.5rem', color: 'var(--text-primary)' }}>Scan with WhatsApp</h2>
+          <div style={{ background: '#fff', display: 'inline-block', padding: '1rem', borderRadius: '8px' }}>
+            <QRCodeSVG value={qrData} size={256} />
+          </div>
+          <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Linked Devices → Link a Device</p>
+        </div>
+      )}
 
       <div className="section">
         <div className="section-title">New {activeTab === 'reminders' ? 'Reminder' : 'Advanced Task'}</div>

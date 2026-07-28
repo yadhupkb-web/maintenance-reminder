@@ -60,6 +60,7 @@ function addLog(type, message) {
 // ─── WhatsApp Client (Baileys) ──────────────────────────────────────────────
 
 let clientStatus = 'disconnected';
+let currentQR = '';
 let sock;
 
 async function connectToWhatsApp() {
@@ -78,7 +79,9 @@ async function connectToWhatsApp() {
     
     if (qr) {
       clientStatus = 'qr';
+      currentQR = qr;
       io.emit('status', clientStatus);
+      io.emit('qr', currentQR);
       console.log('\n─────────────────────────────────────────');
       console.log('  Scan this QR code with WhatsApp:');
       console.log('  (Linked Devices → Link a Device)');
@@ -89,6 +92,7 @@ async function connectToWhatsApp() {
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       clientStatus = 'disconnected';
+      currentQR = '';
       io.emit('status', clientStatus);
       addLog('error', 'Disconnected from WhatsApp.');
       
@@ -100,6 +104,7 @@ async function connectToWhatsApp() {
     } else if (connection === 'open') {
       console.log('WhatsApp connected.\n');
       clientStatus = 'ready';
+      currentQR = '';
       io.emit('status', clientStatus);
       addLog('success', 'WhatsApp connected.');
     }
@@ -450,6 +455,9 @@ app.get('*', (req, res) => {
 
 io.on('connection', (socket) => {
   socket.emit('status', clientStatus);
+  if (clientStatus === 'qr' && currentQR) {
+    socket.emit('qr', currentQR);
+  }
   socket.emit('tasks_updated', config.tasks);
   socket.on('disconnect', () => {});
 });
