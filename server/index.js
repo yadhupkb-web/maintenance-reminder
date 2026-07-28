@@ -225,7 +225,16 @@ async function getValidChatId(phoneOrGroup) {
     }
   } 
   else if (/[a-zA-Z]/.test(phoneOrGroup)) {
-    throw new Error(`Please paste the WhatsApp Group Invite Link instead of the group name to prevent server crashes.`);
+    // It's a Group Name instead of a phone number
+    const groupName = phoneOrGroup.trim().toLowerCase();
+    const groups = await sock.groupFetchAllParticipating();
+    
+    for (const jid in groups) {
+      if (groups[jid].subject && groups[jid].subject.toLowerCase() === groupName) {
+        return jid;
+      }
+    }
+    throw new Error(`Could not find a group named "${phoneOrGroup}". Please make sure you have manually added the bot's phone number to that group on WhatsApp.`);
   } 
   else {
     const cleaned = phoneOrGroup.replace(/\D/g, '');
