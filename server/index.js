@@ -189,14 +189,17 @@ client.initialize();
 async function getValidChatId(phoneOrGroup) {
   if (phoneOrGroup.includes('chat.whatsapp.com/')) {
     try {
-      const inviteCode = phoneOrGroup.split('chat.whatsapp.com/')[1].replace('/', '').trim();
+      const match = phoneOrGroup.match(/chat\.whatsapp\.com\/(?:invite\/)?([a-zA-Z0-9]+)/);
+      if (!match) throw new Error('Invalid WhatsApp group link format.');
+      const inviteCode = match[1];
+      
       const groupId = await client.acceptInvite(inviteCode);
       return groupId;
     } catch (err) {
       throw new Error(`Invalid group link or bot does not have permission: ${err.message}`);
     }
   } else if (/[a-zA-Z]/.test(phoneOrGroup)) {
-    throw new Error(`Please paste the WhatsApp Group Invite Link instead of the group name to prevent server crashes.`);
+    throw new Error(`Please paste the WhatsApp Group Invite Link instead of the group name.`);
   } else {
     const cleaned = phoneOrGroup.replace(/\D/g, '');
     const chatId = `${cleaned}@c.us`;
