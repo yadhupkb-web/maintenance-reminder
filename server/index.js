@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -69,10 +69,12 @@ let sock;
 
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'baileys_auth'));
+  const { version, isLatest } = await fetchLatestBaileysVersion();
   
   sock = makeWASocket({
+    version,
     auth: state,
-    browser: ['Mac OS', 'Safari', '10.15.7'],
+    browser: ['Ubuntu', 'Chrome', '113.0.5672.126'],
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }), // Suppress heavy logging
   });
