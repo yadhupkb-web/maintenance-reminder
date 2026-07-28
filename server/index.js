@@ -1,4 +1,8 @@
 import express from 'express';
+import crypto from 'crypto';
+if (!globalThis.crypto) {
+  globalThis.crypto = crypto.webcrypto;
+}
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
