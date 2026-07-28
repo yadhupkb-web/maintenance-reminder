@@ -199,7 +199,16 @@ async function getValidChatId(phoneOrGroup) {
       throw new Error(`Invalid group link or bot does not have permission: ${err.message}`);
     }
   } else if (/[a-zA-Z]/.test(phoneOrGroup)) {
-    throw new Error(`Please paste the WhatsApp Group Invite Link instead of the group name.`);
+    // Search by exact Group Name
+    const groupName = phoneOrGroup.trim().toLowerCase();
+    const chats = await client.getChats();
+    
+    for (const chat of chats) {
+      if (chat.isGroup && chat.name && chat.name.toLowerCase() === groupName) {
+        return chat.id._serialized;
+      }
+    }
+    throw new Error(`Could not find a group named "${phoneOrGroup}". Please manually add the bot's phone number to that group on WhatsApp.`);
   } else {
     const cleaned = phoneOrGroup.replace(/\D/g, '');
     const chatId = `${cleaned}@c.us`;
