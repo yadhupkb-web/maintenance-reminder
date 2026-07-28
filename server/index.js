@@ -204,21 +204,24 @@ connectToWhatsApp();
 async function getValidChatId(phoneOrGroup) {
   if (phoneOrGroup.includes('chat.whatsapp.com/')) {
     try {
-      const inviteCode = phoneOrGroup.split('chat.whatsapp.com/')[1].replace('/', '').trim();
+      const match = phoneOrGroup.match(/chat\.whatsapp\.com\/(?:invite\/)?([a-zA-Z0-9]+)/);
+      if (!match) throw new Error('Invalid WhatsApp group link format.');
+      const inviteCode = match[1];
+      
       let groupId;
       try {
+        // Attempt to auto-join the group
         groupId = await sock.groupAcceptInvite(inviteCode);
       } catch (err) {
-        if (err.message === 'conflict' || err?.data === 409 || err?.output?.statusCode === 409 || String(err).includes('conflict')) {
-          const groupInfo = await sock.groupGetInviteInfo(inviteCode);
-          groupId = groupInfo.id;
-        } else {
-          throw err;
-        }
+        // If Baileys throws 'conflict' (already joined) or 'No sessions' (known Baileys bug),
+        // fallback to just fetching the group ID from the invite link.
+        // Note: User must manually add the bot to the group if auto-join failed.
+        const groupInfo = await sock.groupGetInviteInfo(inviteCode);
+        groupId = groupInfo.id;
       }
       return groupId;
     } catch (err) {
-      throw new Error(`Invalid group link or bot does not have permission: ${err.message}`);
+      throw new Error(`Failed to resolve group link: ${err.message}`);
     }
   } 
   else if (/[a-zA-Z]/.test(phoneOrGroup)) {
