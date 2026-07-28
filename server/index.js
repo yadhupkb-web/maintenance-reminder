@@ -193,22 +193,16 @@ async function getValidChatId(phoneOrGroup) {
       if (!match) throw new Error('Invalid WhatsApp group link format.');
       const inviteCode = match[1];
       
-      const groupId = await client.acceptInvite(inviteCode);
-      return groupId;
+      const inviteInfo = await client.getInviteInfo(inviteCode);
+      if (!inviteInfo || !inviteInfo.id) {
+        throw new Error('Could not resolve group ID from link.');
+      }
+      return typeof inviteInfo.id === 'string' ? inviteInfo.id : inviteInfo.id._serialized;
     } catch (err) {
-      throw new Error(`Invalid group link or bot does not have permission: ${err.message}`);
+      throw new Error(`Invalid group link: ${err.message}`);
     }
   } else if (/[a-zA-Z]/.test(phoneOrGroup)) {
-    // Search by exact Group Name
-    const groupName = phoneOrGroup.trim().toLowerCase();
-    const chats = await client.getChats();
-    
-    for (const chat of chats) {
-      if (chat.isGroup && chat.name && chat.name.toLowerCase() === groupName) {
-        return chat.id._serialized;
-      }
-    }
-    throw new Error(`Could not find a group named "${phoneOrGroup}". Please manually add the bot's phone number to that group on WhatsApp.`);
+    throw new Error(`Group Name searching is disabled on low-memory servers. Please use the Group Invite Link instead.`);
   } else {
     const cleaned = phoneOrGroup.replace(/\D/g, '');
     const chatId = `${cleaned}@c.us`;
@@ -219,6 +213,7 @@ async function getValidChatId(phoneOrGroup) {
     return chatId;
   }
 }
+
 
 function calculateInitialReminder(task) {
   const now = new Date();
