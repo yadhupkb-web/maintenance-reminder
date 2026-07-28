@@ -105,7 +105,13 @@ async function connectToWhatsApp() {
       if (shouldReconnect) {
         setTimeout(connectToWhatsApp, 10000);
       } else {
-        addLog('error', 'Logged out. Please delete the server/baileys_auth folder and restart.');
+        addLog('error', 'Logged out from phone. Generating a new QR code...');
+        try {
+          fs.rmSync(path.join(__dirname, 'baileys_auth'), { recursive: true, force: true });
+        } catch (e) {
+          console.error(e);
+        }
+        setTimeout(connectToWhatsApp, 3000);
       }
     } else if (connection === 'open') {
       console.log('WhatsApp connected.\n');
