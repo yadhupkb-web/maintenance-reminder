@@ -68,6 +68,7 @@ async function connectToWhatsApp() {
   
   sock = makeWASocket({
     auth: state,
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }), // Suppress heavy logging
   });
