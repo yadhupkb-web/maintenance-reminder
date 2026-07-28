@@ -93,12 +93,11 @@ async function connectToWhatsApp() {
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       clientStatus = 'disconnected';
-      currentQR = '';
       io.emit('status', clientStatus);
-      addLog('error', 'Disconnected from WhatsApp.');
+      addLog('error', `Disconnected: ${lastDisconnect?.error?.message || 'Unknown'}`);
       
       if (shouldReconnect) {
-        connectToWhatsApp();
+        setTimeout(connectToWhatsApp, 3000);
       } else {
         addLog('error', 'Logged out. Please delete the server/baileys_auth folder and restart.');
       }
