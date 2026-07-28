@@ -205,7 +205,17 @@ async function getValidChatId(phoneOrGroup) {
   if (phoneOrGroup.includes('chat.whatsapp.com/')) {
     try {
       const inviteCode = phoneOrGroup.split('chat.whatsapp.com/')[1].replace('/', '').trim();
-      const groupId = await sock.groupAcceptInvite(inviteCode);
+      let groupId;
+      try {
+        groupId = await sock.groupAcceptInvite(inviteCode);
+      } catch (err) {
+        if (err.message === 'conflict' || err?.data === 409 || err?.output?.statusCode === 409 || String(err).includes('conflict')) {
+          const groupInfo = await sock.groupGetInviteInfo(inviteCode);
+          groupId = groupInfo.id;
+        } else {
+          throw err;
+        }
+      }
       return groupId;
     } catch (err) {
       throw new Error(`Invalid group link or bot does not have permission: ${err.message}`);
