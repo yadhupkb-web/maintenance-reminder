@@ -72,7 +72,7 @@ async function connectToWhatsApp() {
   
   sock = makeWASocket({
     auth: state,
-    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    browser: ['Mac OS', 'Safari', '10.15.7'],
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }), // Suppress heavy logging
   });
@@ -101,7 +101,7 @@ async function connectToWhatsApp() {
       addLog('error', `Disconnected: ${lastDisconnect?.error?.message || 'Unknown'}`);
       
       if (shouldReconnect) {
-        setTimeout(connectToWhatsApp, 3000);
+        setTimeout(connectToWhatsApp, 10000);
       } else {
         addLog('error', 'Logged out. Please delete the server/baileys_auth folder and restart.');
       }
