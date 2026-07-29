@@ -120,7 +120,8 @@ client.on('message_create', async (msg) => {
   if (msg.from === 'status@broadcast') return;
 
   const text = msg.body.trim().toLowerCase();
-  const chatId = msg.from;
+  // If the host account sends the message, msg.from is the host, msg.to is the group
+  const chatId = msg.fromMe ? msg.to : msg.from;
 
   if (text === '!id') {
     await client.sendMessage(chatId, `🤖 *Group/Chat ID:*\n${chatId}`);
