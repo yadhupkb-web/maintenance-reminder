@@ -116,11 +116,16 @@ client.on('auth_failure', msg => {
 // Task selection state for replies
 const awaitingSelection = {};
 
-client.on('message', async (msg) => {
+client.on('message_create', async (msg) => {
   if (msg.from === 'status@broadcast') return;
 
   const text = msg.body.trim().toLowerCase();
   const chatId = msg.from;
+
+  if (text === '!id') {
+    await client.sendMessage(chatId, `🤖 *Group/Chat ID:*\n${chatId}`);
+    return;
+  }
 
   if (text === 'done') {
     const pendingTasks = config.tasks.filter(t => t.chatId === chatId && t.status === 'pending_reply');
@@ -187,7 +192,9 @@ client.initialize();
 // ─── Dynamic Scheduling Logic ───────────────────────────────────────────────
 
 async function getValidChatId(phoneOrGroup) {
-  if (phoneOrGroup.includes('chat.whatsapp.com/')) {
+  if (phoneOrGroup.includes('@g.us')) {
+    return phoneOrGroup.trim();
+  } else if (phoneOrGroup.includes('chat.whatsapp.com/')) {
     try {
       const match = phoneOrGroup.match(/chat\.whatsapp\.com\/(?:invite\/)?([a-zA-Z0-9]+)/);
       if (!match) throw new Error('Invalid WhatsApp group link format.');
