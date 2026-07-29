@@ -124,7 +124,13 @@ client.on('message_create', async (msg) => {
   const chatId = msg.fromMe ? msg.to : msg.from;
 
   if (text === '!id') {
-    await client.sendMessage(chatId, `🤖 *Group/Chat ID:*\n${chatId}`);
+    console.log(`\n\n🎯 SOMEONE TYPED !id`);
+    console.log(`🎯 THE ID FOR THIS CHAT IS: ${chatId}\n\n`);
+    try {
+      await client.sendMessage(chatId, `🤖 *Group/Chat ID:*\n${chatId}`);
+    } catch (err) {
+      console.log('Failed to send reply, but here is the ID ^^^');
+    }
     return;
   }
 
